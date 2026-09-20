@@ -1,171 +1,301 @@
 # AT4---SSD
-{
- "cells": [
-  {
-   "cell_type": "markdown",
-   "metadata": {},
-   "source": [
-    "# 🛡️ CyberSentinel - MVP de Análise de Ameaças e Integridade\n",
-    "Este Jupyter Notebook faz parte do Produto Mínimo Viável (MVP) do **CyberSentinel**.\n",
-    "Ele executa duas funções centrais de cibersegurança defensiva:\n",
-    "1. **Verificação de Integridade de Arquivos (Hashing SHA-256):** Detecta adulterações não autorizadas em dados sensíveis.\n",
-    "2. **Análise Forense de Logs & Detecção de Brute Force:** Varre registros de rede, identifica comportamentos anômalos e gera um painel gráfico visual de mitigação."
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "# [1/4] Instalação e importação das dependências necessárias\n",
-    "!pip install pandas plotly ipywidgets -q\n",
-    "\n",
-    "import os\n",
-    "import hashlib\n",
-    "import re\n",
-    "import pandas as pd\n",
-    "import plotly.express as px\n",
-    "from IPython.display import display, HTML\n",
-    "\n",
-    "print(\"✅ Dependências carregadas com sucesso!\")"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "# [2/4] Simulação do Ambiente de Testes (Arquivos Sensíveis + Logs de Acesso)\n",
-    "\n",
-    "# Criar arquivo sensível de teste\n",
-    "with open(\"dados_confidenciais.txt\", \"w\") as f:\n",
-    "    f.write(\"CONFIDENCIAL: Relatorio Financeiro Q3 - Versao Oficial\\n\")\n",
-    "\n",
-    "# Criar arquivo de log contendo conexões legítimas e ataques de Força Bruta\n",
-    "log_content = \"\"\"2026-09-20 10:00:12 192.168.1.10 LOGIN_SUCCESS admin\n",
-    "2026-09-20 10:01:05 45.33.32.156 LOGIN_FAILED admin\n",
-    "2026-09-20 10:01:07 45.33.32.156 LOGIN_FAILED admin\n",
-    "2026-09-20 10:01:09 45.33.32.156 LOGIN_FAILED admin\n",
-    "2026-09-20 10:01:11 45.33.32.156 LOGIN_FAILED admin\n",
-    "2026-09-20 10:01:15 45.33.32.156 LOGIN_FAILED admin\n",
-    "2026-09-20 10:01:20 45.33.32.156 LOGIN_FAILED admin\n",
-    "2026-09-20 10:05:00 10.0.0.5 LOGIN_SUCCESS user1\n",
-    "2026-09-20 10:06:12 185.220.101.5 LOGIN_FAILED root\n",
-    "2026-09-20 10:06:14 185.220.101.5 LOGIN_FAILED root\n",
-    "2026-09-20 10:06:18 185.220.101.5 LOGIN_FAILED root\n",
-    "2026-09-20 10:06:22 185.220.101.5 LOGIN_FAILED root\n",
-    "2026-09-20 10:06:30 185.220.101.5 LOGIN_FAILED root\n",
-    "2026-09-20 10:10:00 192.168.1.12 LOGIN_SUCCESS user2\n",
-    "\"\"\"\n",
-    "\n",
-    "with open(\"server_access.log\", \"w\") as f:\n",
-    "    f.write(log_content)\n",
-    "\n",
-    "print(\"📁 Arquivos de teste 'dados_confidenciais.txt' e 'server_access.log' gerados!\")"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "# [3/4] Classe do Motor de Segurança\n",
-    "\n",
-    "class CyberSentinelEngine:\n",
-    "    @staticmethod\n",
-    "    def compute_sha256(file_path):\n",
-    "        \"\"\"Gera a impressão digital criptográfica (SHA-256) do arquivo.\"\"\"\n",
-    "        if not os.path.exists(file_path):\n",
-    "            return None\n",
-    "        sha256_hash = hashlib.sha256()\n",
-    "        with open(file_path, \"rb\") as f:\n",
-    "            for byte_block in iter(lambda: f.read(4096), b\"\"):\n",
-    "                sha256_hash.update(byte_block)\n",
-    "        return sha256_hash.hexdigest()\n",
-    "\n",
-    "    @staticmethod\n",
-    "    def analyze_logs(log_path, brute_force_threshold=3):\n",
-    "        \"\"\"Processa os logs de acesso e identifica endereços IP maliciosos.\"\"\"\n",
-    "        logs = []\n",
-    "        pattern = re.compile(r'(?P<date>\\d{4}-\\d{2}-\\d{2})\\s(?P<time>\\d{2}:\\d{2}:\\d{2})\\s(?P<ip>\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})\\s(?P<action>\\w+)\\s(?P<user>\\w+)')\n",
-    "        \n",
-    "        with open(log_path, 'r') as f:\n",
-    "            for line in f:\n",
-    "                match = pattern.match(line.strip())\n",
-    "                if match:\n",
-    "                    logs.append(match.groupdict())\n",
-    "                    \n",
-    "        df = pd.DataFrame(logs)\n",
-    "        \n",
-    "        # Agrupa falhas de login por IP\n",
-    "        failures = df[df['action'] == 'LOGIN_FAILED'].groupby('ip').size().reset_index(name='failed_attempts')\n",
-    "        suspicious_ips = failures[failures['failed_attempts'] >= brute_force_threshold]\n",
-    "        \n",
-    "        # Classifica os registros no dataframe original\n",
-    "        df['status'] = 'SEGURO'\n",
-    "        df.loc[df['ip'].isin(suspicious_ips['ip']), 'status'] = 'ALERT: BRUTE FORCE'\n",
-    "        \n",
-    "        return df, suspicious_ips\n",
-    "\n",
-    "print(\"⚙️ Motor do CyberSentinel carregado e pronto para execução!\")"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "# [4/4] Painel Executivo e Visualização das Ameaças\n",
-    "\n",
-    "sentinel = CyberSentinelEngine()\n",
-    "\n",
-    "# Banner\n",
-    "display(HTML(\"<h2 style='color:#1E88E5;'>🛡️ CyberSentinel | Painel de Monitoramento MVP</h2>\"))\n",
-    "\n",
-    "# 1. Teste de Integridade\n",
-    "hash_val = sentinel.compute_sha256(\"dados_confidenciais.txt\")\n",
-    "display(HTML(f\"<b>[Verificação de Integridade]</b> Hash SHA-256 de 'dados_confidenciais.txt':<br><code style='background:#f4f4f4; padding:3px;'>{hash_val}</code><hr>\"))\n",
-    "\n",
-    "# 2. Processamento e Análise Forense de Logs\n",
-    "df_logs, threats = sentinel.analyze_logs(\"server_access.log\", brute_force_threshold=4)\n",
-    "\n",
-    "# Indicador de Ameaças\n",
-    "threat_count = len(threats)\n",
-    "status_color = \"#D32F2F\" if threat_count > 0 else \"#388E3C\"\n",
-    "display(HTML(f\"<h3 style='color:{status_color};'>Ameaças Detectadas: {threat_count} IP(s) Suspeito(s) de Força Bruta</h3>\"))\n",
-    "\n",
-    "# Estilização de tabela com destaque visual nas ameaças\n",
-    "def style_threats(val):\n",
-    "    if val == 'ALERT: BRUTE FORCE':\n",
-    "        return 'background-color: #FFCDD2; color: #B71C1C; font-weight: bold;'\n",
-    "    return 'background-color: #E8F5E9; color: #1B5E20;'\n",
-    "\n",
-    "display(df_logs.style.applymap(style_threats, subset=['status']))\n",
-    "\n",
-    "# 3. Gráfico do Painel Visual\n",
-    "fig = px.histogram(\n",
-    "    df_logs, \n",
-    "    x=\"ip\", \n",
-    "    color=\"action\", \n",
-    "    barmode=\"group\",\n",
-    "    title=\"Atividade de Acesso por IP (Sucesso vs. Falhas)\",\n",
-    "    labels={'ip': 'Endereço IP', 'count': 'Tentativas de Conexão'},\n",
-    "    color_discrete_map={'LOGIN_SUCCESS': '#2E7D32', 'LOGIN_FAILED': '#C62828'}\n",
-    ")\n",
-    "fig.update_layout(width=800, height=420, template=\"plotly_white\")\n",
-    "fig.show()"
-   ]
-  }
- ],
- "metadata": {
-  "language_info": {
-   "name": "python"
-  }
- },
- "nbformat": 4,
- "nbformat_minor": 2
-}
+# 🛡️ MVP — Detecção de Anomalias em Segurança Cibernética
+
+## 📌 Sobre o projeto
+
+Este projeto apresenta um **Mínimo Produto Viável (MVP)** para detecção de comportamentos anômalos em dados relacionados à segurança cibernética.
+
+A solução utiliza técnicas de **aprendizado de máquina não supervisionado** para identificar registros que apresentam comportamentos diferentes do padrão observado nos dados.
+
+O projeto foi desenvolvido em **Python**, com execução prevista no **Google Colab**, e utiliza o algoritmo **Isolation Forest** para identificar possíveis anomalias.
+
+---
+
+## 🎯 Objetivo
+
+Desenvolver uma aplicação capaz de:
+
+* analisar registros de acessos;
+* identificar padrões de comportamento;
+* detectar possíveis comportamentos anômalos;
+* calcular um indicador de anomalia;
+* classificar os registros identificados;
+* apresentar os resultados por meio de gráficos e tabelas;
+* gerar uma base de resultados para análise posterior.
+
+> **Observação:** o MVP possui finalidade acadêmica e experimental. Os dados utilizados podem ser simulados e não representam necessariamente eventos reais de segurança.
+
+---
+
+## 🧩 Problema
+
+Ambientes digitais podem gerar grandes quantidades de registros de acesso, tornando difícil identificar manualmente comportamentos fora do padrão.
+
+Entre os comportamentos que podem ser analisados estão:
+
+* quantidade elevada de tentativas de login;
+* aumento de falhas de autenticação;
+* acessos em horários incomuns;
+* volume elevado de dados transferidos;
+* utilização de múltiplas portas;
+* acessos provenientes de endereços IP externos;
+* combinações incomuns de diferentes características de acesso.
+
+O MVP busca utilizar essas informações para auxiliar na identificação automática de registros potencialmente anômalos.
+
+---
+
+## 🔬 Metodologia
+
+O processo de análise é dividido nas seguintes etapas:
+
+```text
+Dados de acesso
+       ↓
+Pré-processamento
+       ↓
+Análise exploratória
+       ↓
+Seleção das variáveis
+       ↓
+Isolation Forest
+       ↓
+Detecção de anomalias
+       ↓
+Cálculo do indicador
+       ↓
+Classificação
+       ↓
+Visualização dos resultados
+```
+
+---
+
+## 🤖 Modelo utilizado
+
+### Isolation Forest
+
+O **Isolation Forest** é um algoritmo de aprendizado de máquina utilizado para detecção de anomalias.
+
+A lógica do modelo consiste em identificar observações que podem ser isoladas mais facilmente do restante dos dados.
+
+Neste projeto, o algoritmo analisa características dos registros de acesso e atribui uma indicação de comportamento normal ou anômalo.
+
+A implementação utiliza a biblioteca `scikit-learn`.
+
+---
+
+## 📊 Variáveis analisadas
+
+O conjunto de dados utilizado no MVP pode conter as seguintes variáveis:
+
+| Variável           | Descrição                                  |
+| ------------------ | ------------------------------------------ |
+| `timestamp`        | Data e horário do acesso                   |
+| `ip_address`       | Endereço IP associado ao acesso            |
+| `login_attempts`   | Número de tentativas de login              |
+| `session_duration` | Duração da sessão                          |
+| `bytes_sent`       | Quantidade de dados enviados               |
+| `bytes_received`   | Quantidade de dados recebidos              |
+| `failed_logins`    | Número de tentativas de login malsucedidas |
+| `unique_ports`     | Quantidade de portas diferentes utilizadas |
+| `access_hour`      | Horário do acesso                          |
+| `is_external_ip`   | Indicador de acesso externo                |
+
+---
+
+## 📈 Indicador de anomalia
+
+Após a aplicação do modelo, os registros podem ser classificados em:
+
+| Resultado  | Interpretação                                        |
+| ---------- | ---------------------------------------------------- |
+| `Normal`   | Comportamento próximo ao padrão observado            |
+| `Anomalia` | Comportamento significativamente diferente do padrão |
+
+O resultado deve ser interpretado como **um indicador para investigação**, e não como confirmação de um incidente de segurança.
+
+---
+
+## 🛠️ Tecnologias utilizadas
+
+* **Python**
+* **Google Colab**
+* **Pandas**
+* **NumPy**
+* **Scikit-learn**
+* **Matplotlib**
+* **Seaborn**
+
+---
+
+## 📁 Estrutura do projeto
+
+```text
+mvp-deteccao-anomalias/
+│
+├── MVP_Deteccao_Anomalias.ipynb
+│
+├── data/
+│   └── acessos_ciberneticos.csv
+│
+├── results/
+│   └── resultados_anomalias.csv
+│
+├── README.md
+│
+└── requirements.txt
+```
+
+### Descrição dos arquivos
+
+**`MVP_Deteccao_Anomalias.ipynb`**
+
+Notebook principal contendo todo o processo de análise e detecção de anomalias.
+
+**`data/`**
+
+Diretório destinado aos dados utilizados pelo modelo.
+
+**`results/`**
+
+Diretório destinado aos resultados gerados pelo notebook.
+
+**`requirements.txt`**
+
+Lista das bibliotecas necessárias para execução do projeto.
+
+---
+
+## ▶️ Como executar
+
+### 1. Clonar o repositório
+
+```bash
+git clone https://github.com/SEU-USUARIO/mvp-deteccao-anomalias.git
+```
+
+### 2. Acessar o diretório
+
+```bash
+cd mvp-deteccao-anomalias
+```
+
+### 3. Instalar as dependências
+
+```bash
+pip install -r requirements.txt
+```
+
+### 4. Executar o notebook
+
+O notebook pode ser executado diretamente pelo **Google Colab**.
+
+Outra opção é abrir localmente utilizando:
+
+```bash
+jupyter notebook
+```
+
+---
+
+## ☁️ Execução no Google Colab
+
+O projeto foi desenvolvido para facilitar a execução no Google Colab.
+
+Após abrir o arquivo:
+
+```text
+MVP_Deteccao_Anomalias.ipynb
+```
+
+basta executar as células sequencialmente ou utilizar:
+
+**Ambiente de execução → Executar tudo**
+
+O notebook realizará o processamento dos dados e apresentará os resultados automaticamente.
+
+---
+
+## 📊 Resultados esperados
+
+Ao final da execução, o MVP deverá apresentar:
+
+* quantidade total de registros analisados;
+* quantidade de registros classificados como anômalos;
+* percentual de anomalias;
+* distribuição dos registros;
+* gráficos de comportamento;
+* identificação dos registros potencialmente anômalos;
+* arquivo com os resultados da análise.
+
+Exemplo de saída:
+
+```text
+Total de registros: 1000
+Registros normais: 940
+Anomalias identificadas: 60
+Percentual de anomalias: 6,0%
+```
+
+Os valores acima são apenas ilustrativos.
+
+---
+
+## ⚠️ Limitações do MVP
+
+Por se tratar de uma primeira versão, o projeto apresenta algumas limitações:
+
+* os dados podem ser simulados;
+* o modelo não confirma a ocorrência de um ataque;
+* não substitui ferramentas profissionais de segurança;
+* a qualidade dos resultados depende das características dos dados;
+* o modelo pode gerar falsos positivos e falsos negativos;
+* os parâmetros do algoritmo podem precisar de ajustes para diferentes ambientes.
+
+---
+
+## 🚀 Possíveis melhorias
+
+Como evolução do MVP, podem ser implementadas:
+
+* integração com dados reais de logs;
+* integração com sistemas SIEM;
+* monitoramento em tempo real;
+* criação de alertas automáticos;
+* dashboard interativo;
+* identificação de padrões por usuário;
+* análise de endereços IP;
+* integração com APIs de inteligência de ameaças;
+* comparação entre diferentes algoritmos de detecção;
+* armazenamento histórico dos eventos;
+* criação de níveis de criticidade.
+
+---
+
+## 🔐 Segurança e privacidade
+
+Para fins de demonstração, recomenda-se utilizar **dados fictícios ou anonimizados**.
+
+Informações sensíveis, como endereços IP reais, credenciais, tokens, identificadores pessoais ou dados internos de empresas, não devem ser disponibilizadas publicamente no repositório.
+
+---
+
+## 📚 Referências
+
+O projeto utiliza principalmente as seguintes tecnologias e conceitos:
+
+* Python para desenvolvimento da aplicação;
+* Pandas e NumPy para manipulação dos dados;
+* Scikit-learn para implementação do modelo de aprendizado de máquina;
+* Matplotlib e Seaborn para visualização dos resultados;
+* Isolation Forest para detecção de anomalias.
+
+---
+
+## 👩‍💻 Projeto
+
+**MVP de Detecção de Anomalias em Segurança Cibernética**
+
+Projeto desenvolvido para fins de estudo, prototipagem e demonstração da aplicação de técnicas de análise de dados e aprendizado de máquina na área de segurança cibernética.
+
